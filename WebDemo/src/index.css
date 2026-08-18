@@ -1,0 +1,45 @@
+@import url('https://fonts.googleapis.com/css2?family=Russo+One&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    background-color: #f4f4f4;
+    color: #1a1c1c;
+    font-family: 'Inter', 'Kanit', sans-serif;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Hanken Grotesk', 'Kanit', sans-serif;
+  }
+}
+
+.telemetry-value {
+  font-family: 'Hanken Grotesk', 'Kanit', sans-serif;
+  font-size: 1.5rem;
+  font-weight: 500;
+  line-height: 1rem;
+  letter-spacing: -0.01em;
+}
+
+.label-caps {
+  font-family: 'Hanken Grotesk', 'Kanit', sans-serif;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+@keyframes pulseWarn {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.85); }
+}
+
+.animate-pulse-warn {
+  animation: pulseWarn 1.5s infinite ease-in-out;
+}
+
+.font-russo {
+  font-family: 'Russo One', sans-serif;
+}

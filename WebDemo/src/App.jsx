@@ -9,8 +9,31 @@ import ChainOfCustodyTimeline from './components/ChainOfCustodyTimeline';
 import ExportAndActions from './components/ExportAndActions';
 import TesaiotPanel from './components/TesaiotPanel';
 import { dbService } from './lib/supabase';
+import { bitstreamMqtt } from './services/bitstreamMqtt';
+import { normalizeBitstreamPayload } from './adapters/bitstreamSensorAdapter';
 
 export default function App() {
+  // Bitstream MQTT Integration (STEP 3 & STEP 4)
+  useEffect(() => {
+    const topic = import.meta.env.VITE_BITSTREAM_MQTT_TOPIC || '';
+    const url = import.meta.env.VITE_BITSTREAM_MQTT_URL || 'ws://127.0.0.1:8883/mqtt';
+
+    bitstreamMqtt.onMessage((_, rawPayload) => {
+      const sensorData = normalizeBitstreamPayload(rawPayload);
+      if (sensorData) {
+        console.log('[LabMate SensorData]', sensorData);
+      }
+    });
+
+    bitstreamMqtt.connect(url);
+    if (topic) {
+      bitstreamMqtt.subscribe(topic);
+    }
+
+    return () => {
+      bitstreamMqtt.disconnect();
+    };
+  }, []);
   const [toastMsg, setToastMsg] = useState('');
   const [state, setState] = useState({
     device_id: 'labmate-01',

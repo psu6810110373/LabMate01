@@ -13,7 +13,9 @@ import { bitstreamMqtt } from './services/bitstreamMqtt';
 import { normalizeBitstreamPayload } from './adapters/bitstreamSensorAdapter';
 
 export default function App() {
-  // Bitstream MQTT Integration (STEP 3 & STEP 4)
+  const hasLiveMqttRef = useRef(false);
+
+  // Bitstream MQTT Integration (STEP 3, STEP 4 & STEP 5)
   useEffect(() => {
     const topic = import.meta.env.VITE_BITSTREAM_MQTT_TOPIC || '';
     const url = import.meta.env.VITE_BITSTREAM_MQTT_URL || 'ws://127.0.0.1:8883/mqtt';
@@ -22,6 +24,23 @@ export default function App() {
       const sensorData = normalizeBitstreamPayload(rawPayload);
       if (sensorData) {
         console.log('[LabMate SensorData]', sensorData);
+        hasLiveMqttRef.current = true;
+        setState((prev) => ({
+          ...prev,
+          acceleration: {
+            x_g: sensorData.accel_x,
+            y_g: sensorData.accel_y,
+            z_g: sensorData.accel_z,
+            peak_g: sensorData.impact_g
+          },
+          orientation: {
+            tilt_deg: sensorData.tilt_deg
+          },
+          environment: {
+            ...prev.environment,
+            temperature_c: sensorData.temperature !== null ? sensorData.temperature : prev.environment.temperature_c
+          }
+        }));
       }
     });
 
@@ -315,24 +334,43 @@ export default function App() {
     const timer = setInterval(() => {
       const current = stateRef.current;
       if (current.state !== 'ALERT') {
-        const x_g = +(Math.sin(Date.now() / 1000) * 0.05 + (Math.random() * 0.02 - 0.01)).toFixed(2);
-        const y_g = +(Math.cos(Date.now() / 1000) * 0.05 + (Math.random() * 0.02 - 0.01)).toFixed(2);
-        const z_g = +(1.00 + (Math.random() * 0.04 - 0.02)).toFixed(2);
-        const peak_g = +Math.sqrt(x_g ** 2 + y_g ** 2 + z_g ** 2).toFixed(2);
-        const tilt_deg = +(2.0 + Math.random() * 1.5).toFixed(1);
-        const temperature_c = +(24.5 + Math.sin(Date.now() / 5000) * 0.5).toFixed(1);
-        const humidity_rh = +(48.0 + Math.cos(Date.now() / 5000) * 1.0).toFixed(1);
-        const pressure_hpa = +(1008.0 + Math.random() * 0.5).toFixed(1);
+        if (hasLiveMqttRef.current) {
+          // Live MQTT active: preserve live sensor fields (accel, impact_g, temperature, tilt)
+          const humidity_rh = +(48.0 + Math.cos(Date.now() / 5000) * 1.0).toFixed(1);
+          const pressure_hpa = +(1008.0 + Math.random() * 0.5).toFixed(1);
 
-        const updatedTelemetry = {
-          ...current,
-          acceleration: { x_g, y_g, z_g, peak_g },
-          orientation: { tilt_deg },
-          environment: { temperature_c, humidity_rh, pressure_hpa }
-        };
+          const updatedTelemetry = {
+            ...current,
+            environment: {
+              ...current.environment,
+              humidity_rh,
+              pressure_hpa
+            }
+          };
 
-        setState(updatedTelemetry);
-        dbService.logTelemetry(updatedTelemetry);
+          setState(updatedTelemetry);
+          dbService.logTelemetry(updatedTelemetry);
+        } else {
+          // Fallback mock generator when live MQTT data is not received
+          const x_g = +(Math.sin(Date.now() / 1000) * 0.05 + (Math.random() * 0.02 - 0.01)).toFixed(2);
+          const y_g = +(Math.cos(Date.now() / 1000) * 0.05 + (Math.random() * 0.02 - 0.01)).toFixed(2);
+          const z_g = +(1.00 + (Math.random() * 0.04 - 0.02)).toFixed(2);
+          const peak_g = +Math.sqrt(x_g ** 2 + y_g ** 2 + z_g ** 2).toFixed(2);
+          const tilt_deg = +(2.0 + Math.random() * 1.5).toFixed(1);
+          const temperature_c = +(24.5 + Math.sin(Date.now() / 5000) * 0.5).toFixed(1);
+          const humidity_rh = +(48.0 + Math.cos(Date.now() / 5000) * 1.0).toFixed(1);
+          const pressure_hpa = +(1008.0 + Math.random() * 0.5).toFixed(1);
+
+          const updatedTelemetry = {
+            ...current,
+            acceleration: { x_g, y_g, z_g, peak_g },
+            orientation: { tilt_deg },
+            environment: { temperature_c, humidity_rh, pressure_hpa }
+          };
+
+          setState(updatedTelemetry);
+          dbService.logTelemetry(updatedTelemetry);
+        }
       }
     }, 1000);
 

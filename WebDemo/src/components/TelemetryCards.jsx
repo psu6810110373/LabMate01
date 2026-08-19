@@ -2,11 +2,19 @@ import React from 'react';
 import { DoorClosed, Lock, Zap, Compass, Thermometer, Droplets, Wind, BatteryCharging } from 'lucide-react';
 
 export default function TelemetryCards({ state }) {
-  const isImpactAlert = state.acceleration.peak_g > 2.5;
-  const isTiltWarn = state.orientation.tilt_deg > 35.0;
-  const isTempWarn = state.environment.temperature_c > 30.0;
+  const peakG = state.acceleration?.peak_g;
+  const tiltDeg = state.orientation?.tilt_deg;
+  const tempC = state.environment?.temperature_c;
+  const humidityRh = state.environment?.humidity_rh;
+  const pressureHpa = state.environment?.pressure_hpa;
+
+  const isImpactAlert = typeof peakG === 'number' && peakG > 2.5;
+  const isTiltWarn = typeof tiltDeg === 'number' && tiltDeg > 35.0;
+  const isTempWarn = typeof tempC === 'number' && tempC > 30.0;
   const isDoorOpen = state.door_state === 'OPEN';
   const isUnlocked = state.lock_state === 'UNLOCKED';
+
+  const tiltDisplay = typeof tiltDeg === 'number' ? `${tiltDeg}°` : 'N/A';
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
@@ -50,7 +58,7 @@ export default function TelemetryCards({ state }) {
           <Zap className="w-4 h-4 text-[#1d546c]" />
         </div>
         <div className={`telemetry-value my-1 ${isImpactAlert ? 'text-[#ba1a1a] animate-pulse' : 'text-[#1a1c1c]'}`}>
-          {state.acceleration.peak_g} <span className="text-sm font-sans font-normal">g</span>
+          {typeof peakG === 'number' ? peakG : 'N/A'} {typeof peakG === 'number' && <span className="text-sm font-sans font-normal">g</span>}
         </div>
         <div className="text-[11px] text-[#74777f] font-medium">Threshold: &le; 2.5g</div>
       </div>
@@ -65,7 +73,7 @@ export default function TelemetryCards({ state }) {
           <Compass className="w-4 h-4 text-[#1d546c]" />
         </div>
         <div className={`telemetry-value my-1 ${isTiltWarn ? 'text-amber-600' : 'text-[#1a1c1c]'}`}>
-          {state.orientation.tilt_deg}&deg;
+          {tiltDisplay}
         </div>
         <div className="text-[11px] text-[#74777f] font-medium">Threshold: &le; 35&deg;</div>
       </div>
@@ -80,7 +88,7 @@ export default function TelemetryCards({ state }) {
           <Thermometer className="w-4 h-4 text-[#1d546c]" />
         </div>
         <div className={`telemetry-value my-1 ${isTempWarn ? 'text-amber-600' : 'text-[#1a1c1c]'}`}>
-          {state.environment.temperature_c} <span className="text-sm font-sans font-normal">&deg;C</span>
+          {typeof tempC === 'number' ? tempC : 'N/A'} {typeof tempC === 'number' && <span className="text-sm font-sans font-normal">&deg;C</span>}
         </div>
         <div className="text-[11px] text-[#74777f] font-medium">Threshold: &le; 30&deg;C</div>
       </div>
@@ -93,7 +101,7 @@ export default function TelemetryCards({ state }) {
           <Droplets className="w-4 h-4 text-[#1d546c]" />
         </div>
         <div className="telemetry-value my-1 text-[#1a1c1c]">
-          {state.environment.humidity_rh} <span className="text-sm font-sans font-normal">%</span>
+          {typeof humidityRh === 'number' ? humidityRh : (humidityRh || 'N/A')} {typeof humidityRh === 'number' && <span className="text-sm font-sans font-normal">%</span>}
         </div>
         <div className="text-[11px] text-[#74777f] font-medium">Threshold: &le; 70%</div>
       </div>
@@ -106,7 +114,7 @@ export default function TelemetryCards({ state }) {
           <Wind className="w-4 h-4 text-[#406089]" />
         </div>
         <div className="telemetry-value my-1 text-[#1a1c1c]">
-          {state.environment.pressure_hpa} <span className="text-xs font-sans font-normal">hPa</span>
+          {typeof pressureHpa === 'number' ? pressureHpa : (pressureHpa || 'N/A')} {typeof pressureHpa === 'number' && <span className="text-xs font-sans font-normal">hPa</span>}
         </div>
         <div className="text-[11px] text-[#74777f] font-medium">Barometer Normal</div>
       </div>

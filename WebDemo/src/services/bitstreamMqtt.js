@@ -8,7 +8,7 @@ class BitstreamMqttService {
   constructor() {
     this.client = null;
     this.status = 'DISCONNECTED';
-    this.subscribedTopic = null;
+    this.subscribedTopics = new Set();
     this.onMessageCallback = null;
     this.onStatusChangeCallback = null;
   }
@@ -31,14 +31,14 @@ class BitstreamMqttService {
       this.client.on('connect', () => {
         this.setStatus('CONNECTED');
         console.log('[Bitstream MQTT] Connected');
-        if (this.subscribedTopic) {
-          this._doSubscribe(this.subscribedTopic);
-        }
+        this.subscribedTopics.forEach((topic) => {
+          this._doSubscribe(topic);
+        });
       });
 
       this.client.on('message', (topic, message) => {
         const rawPayload = message.toString();
-        console.log('[Bitstream MQTT] Raw message:', rawPayload);
+        console.log(`[Bitstream MQTT] Raw message on topic "${topic}":`, rawPayload);
         if (this.onMessageCallback) {
           this.onMessageCallback(topic, rawPayload);
         }
@@ -67,19 +67,24 @@ class BitstreamMqttService {
     return this.client;
   }
 
-  subscribe(topic = DEFAULT_TOPIC, callback = null) {
+  subscribe(topicOrTopics = DEFAULT_TOPIC, callback = null) {
     if (callback) {
       this.onMessageCallback = callback;
     }
 
-    if (!topic) {
+    if (!topicOrTopics) {
       return;
     }
 
-    this.subscribedTopic = topic;
+    const topics = Array.isArray(topicOrTopics) ? topicOrTopics : [topicOrTopics];
+    topics.forEach((t) => {
+      if (t) this.subscribedTopics.add(t);
+    });
 
     if (this.client && this.client.connected) {
-      this._doSubscribe(topic);
+      topics.forEach((t) => {
+        if (t) this._doSubscribe(t);
+      });
     }
   }
 
@@ -121,7 +126,7 @@ class BitstreamMqttService {
         console.log('[Bitstream MQTT] Cleanly disconnected');
       });
       this.client = null;
-      this.subscribedTopic = null;
+      this.subscribedTopics.clear();
     }
   }
 }

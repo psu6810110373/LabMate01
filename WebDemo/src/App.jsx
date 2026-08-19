@@ -13,40 +13,61 @@ import { bitstreamMqtt } from './services/bitstreamMqtt';
 import { normalizeBitstreamPayload } from './adapters/bitstreamSensorAdapter';
 
 export default function App() {
-  const hasLiveMqttRef = useRef(false);
+  const hasLiveBmi270Ref = useRef(false);
+  const hasLiveSht40Ref = useRef(false);
 
-  // Bitstream MQTT Integration (STEP 3, STEP 4 & STEP 5)
+  // Bitstream MQTT Integration (BMI270 & SHT40)
   useEffect(() => {
-    const topic = import.meta.env.VITE_BITSTREAM_MQTT_TOPIC || '';
+    const bmi270Topic = import.meta.env.VITE_BITSTREAM_MQTT_TOPIC || '';
+    const sht40Topic = import.meta.env.VITE_SHT40_MQTT_TOPIC || 'SHT40';
     const url = import.meta.env.VITE_BITSTREAM_MQTT_URL || 'ws://127.0.0.1:8883/mqtt';
 
-    bitstreamMqtt.onMessage((_, rawPayload) => {
+    bitstreamMqtt.onMessage((topic, rawPayload) => {
       const sensorData = normalizeBitstreamPayload(rawPayload);
       if (sensorData) {
-        console.log('[LabMate SensorData]', sensorData);
-        hasLiveMqttRef.current = true;
-        setState((prev) => ({
-          ...prev,
-          acceleration: {
-            x_g: sensorData.accel_x,
-            y_g: sensorData.accel_y,
-            z_g: sensorData.accel_z,
-            peak_g: sensorData.impact_g
-          },
-          orientation: {
-            tilt_deg: sensorData.tilt_deg
-          },
-          environment: {
-            ...prev.environment,
-            temperature_c: sensorData.temperature !== null ? sensorData.temperature : prev.environment.temperature_c
-          }
-        }));
+        if (sensorData.sensor_type === 'SHT40') {
+          console.log('[LabMate SHT40 SensorData]', sensorData);
+          hasLiveSht40Ref.current = true;
+          setState((prev) => ({
+            ...prev,
+            environment: {
+              ...prev.environment,
+              temperature_c: sensorData.temperature !== null ? sensorData.temperature : prev.environment.temperature_c,
+              humidity_rh: sensorData.humidity !== null ? sensorData.humidity : prev.environment.humidity_rh
+            }
+          }));
+        } else if (sensorData.sensor_type === 'BMI270') {
+          console.log('[LabMate SensorData]', sensorData);
+          hasLiveBmi270Ref.current = true;
+          setState((prev) => ({
+            ...prev,
+            acceleration: {
+              x_g: sensorData.accel_x,
+              y_g: sensorData.accel_y,
+              z_g: sensorData.accel_z,
+              peak_g: sensorData.impact_g
+            },
+            orientation: {
+              tilt_deg: sensorData.tilt_deg
+            },
+            environment: {
+              ...prev.environment,
+              // SHT40 is primary for environmental temperature; BMI270 temp is fallback if SHT40 not active
+              temperature_c: hasLiveSht40Ref.current
+                ? prev.environment.temperature_c
+                : (sensorData.temperature !== null ? sensorData.temperature : prev.environment.temperature_c)
+            }
+          }));
+        }
       }
     });
 
     bitstreamMqtt.connect(url);
-    if (topic) {
-      bitstreamMqtt.subscribe(topic);
+    if (bmi270Topic) {
+      bitstreamMqtt.subscribe(bmi270Topic);
+    }
+    if (sht40Topic) {
+      bitstreamMqtt.subscribe(sht40Topic);
     }
 
     return () => {
@@ -334,24 +355,31 @@ export default function App() {
     const timer = setInterval(() => {
       const current = stateRef.current;
       if (current.state !== 'ALERT') {
-        if (hasLiveMqttRef.current) {
-          // Live MQTT active: preserve live sensor fields (accel, impact_g, temperature, tilt)
-          const humidity_rh = +(48.0 + Math.cos(Date.now() / 5000) * 1.0).toFixed(1);
-          const pressure_hpa = +(1008.0 + Math.random() * 0.5).toFixed(1);
+        const isBmi270Live = hasLiveBmi270Ref.current;
+        const isSht40Live = hasLiveSht40Ref.current;
+
+        if (isBmi270Live || isSht40Live) {
+          const updatedEnv = { ...current.environment };
+
+          // Only generate mock humidity if SHT40 live stream is not active
+          if (!isSht40Live) {
+            updatedEnv.humidity_rh = +(48.0 + Math.cos(Date.now() / 5000) * 1.0).toFixed(1);
+            if (!isBmi270Live) {
+              updatedEnv.temperature_c = +(24.5 + Math.sin(Date.now() / 5000) * 0.5).toFixed(1);
+            }
+          }
+          // Barometer pressure is not supplied by active sensors; generate mock pressure
+          updatedEnv.pressure_hpa = +(1008.0 + Math.random() * 0.5).toFixed(1);
 
           const updatedTelemetry = {
             ...current,
-            environment: {
-              ...current.environment,
-              humidity_rh,
-              pressure_hpa
-            }
+            environment: updatedEnv
           };
 
           setState(updatedTelemetry);
           dbService.logTelemetry(updatedTelemetry);
         } else {
-          // Fallback mock generator when live MQTT data is not received
+          // Fallback mock generator when no live sensor stream is active
           const x_g = +(Math.sin(Date.now() / 1000) * 0.05 + (Math.random() * 0.02 - 0.01)).toFixed(2);
           const y_g = +(Math.cos(Date.now() / 1000) * 0.05 + (Math.random() * 0.02 - 0.01)).toFixed(2);
           const z_g = +(1.00 + (Math.random() * 0.04 - 0.02)).toFixed(2);

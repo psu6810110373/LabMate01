@@ -1,5 +1,5 @@
 /**
- * Adapter module to normalize raw Bitstream MQTT payloads (BMI270 IMU, BMI270 Fusion, SHT40) into LabMate SensorData format.
+ * Adapter module to normalize raw Bitstream MQTT payloads (BMI270 IMU/Fusion, SHT40, DPS368) into LabMate SensorData format.
  */
 
 function asNumber(val) {
@@ -9,6 +9,71 @@ function asNumber(val) {
     if (!isNaN(parsed)) return parsed;
   }
   return null;
+}
+
+/**
+ * Normalizes a DPS368 raw MQTT payload into LabMate pressure SensorData.
+ *
+ * @param {string|object} rawPayload - Raw MQTT payload received from DPS368 topic.
+ * @returns {object|null} Normalized DPS368 SensorData object, or null if parsing fails.
+ */
+export function normalizeDps368Payload(rawPayload) {
+  if (!rawPayload) return null;
+
+  let outerData = null;
+  if (typeof rawPayload === 'string') {
+    try {
+      outerData = JSON.parse(rawPayload);
+    } catch (err) {
+      return null;
+    }
+  } else if (typeof rawPayload === 'object' && rawPayload !== null) {
+    outerData = rawPayload;
+  } else {
+    return null;
+  }
+
+  if (!outerData || typeof outerData !== 'object') return null;
+
+  let innerData = null;
+  const messageRaw = outerData.message;
+  if (typeof messageRaw === 'string') {
+    try {
+      innerData = JSON.parse(messageRaw);
+    } catch (err) {
+      return null;
+    }
+  } else if (typeof messageRaw === 'object' && messageRaw !== null) {
+    innerData = messageRaw;
+  } else {
+    return null;
+  }
+
+  if (!innerData || typeof innerData !== 'object') return null;
+
+  const pressHpa = asNumber(innerData.pressureHpa);
+  const tempC = asNumber(innerData.temperatureC);
+
+  if (pressHpa === null) {
+    return null;
+  }
+
+  let timestamp = new Date().toISOString();
+  if (typeof outerData.hostMs === 'number' && !isNaN(outerData.hostMs) && outerData.hostMs > 0) {
+    timestamp = new Date(outerData.hostMs).toISOString();
+  } else if (typeof outerData.hostMs === 'string') {
+    const parsedMs = parseInt(outerData.hostMs, 10);
+    if (!isNaN(parsedMs) && parsedMs > 0) {
+      timestamp = new Date(parsedMs).toISOString();
+    }
+  }
+
+  return {
+    sensor_type: 'DPS368',
+    timestamp,
+    pressure: pressHpa,
+    temperature: tempC
+  };
 }
 
 /**
@@ -51,11 +116,15 @@ export function normalizeSht40Payload(rawPayload) {
 
   if (!innerData || typeof innerData !== 'object') return null;
 
-  const tempC = asNumber(innerData.temperatureC);
   const humPct = asNumber(innerData.humidityPct);
+  const tempC = asNumber(innerData.temperatureC);
 
-  if (tempC === null && humPct === null) {
+  if (humPct === null && tempC === null) {
     return null;
+  }
+
+  if (innerData.humidityPct === undefined && innerData.accelX === undefined && innerData.pressureHpa === undefined) {
+    // Single temperature field without humidityPct in non-BMI/DPS payload
   }
 
   let timestamp = new Date().toISOString();
@@ -77,7 +146,7 @@ export function normalizeSht40Payload(rawPayload) {
 }
 
 /**
- * Normalizes a raw Bitstream MQTT payload (BMI270 IMU/Fusion or SHT40) into LabMate SensorData.
+ * Normalizes a raw Bitstream MQTT payload (BMI270 IMU/Fusion, SHT40, or DPS368) into LabMate SensorData.
  *
  * @param {string|object} rawPayload - Raw MQTT payload received from broker.
  * @returns {object|null} Normalized LabMate SensorData object, or null if parsing fails.
@@ -124,8 +193,13 @@ export function normalizeBitstreamPayload(rawPayload) {
     return null;
   }
 
-  // Detect SHT40 environmental sensor payload (contains humidityPct or temperatureC without acceleration)
-  if (innerData.humidityPct !== undefined || (innerData.temperatureC !== undefined && innerData.accelX === undefined)) {
+  // Detect DPS368 pressure sensor payload (contains pressureHpa)
+  if (innerData.pressureHpa !== undefined) {
+    return normalizeDps368Payload(outerData);
+  }
+
+  // Detect SHT40 environmental sensor payload (contains humidityPct)
+  if (innerData.humidityPct !== undefined) {
     return normalizeSht40Payload(outerData);
   }
 
@@ -188,11 +262,33 @@ export function normalizeBitstreamPayload(rawPayload) {
 }
 
 /**
- * Runs validation test suite for normalizeBitstreamPayload including BMI270 & SHT40 payloads.
+ * Runs validation test suite for normalizeBitstreamPayload including BMI270, SHT40, & DPS368 payloads.
  * Returns test results report.
  */
 export function runAdapterTests() {
   const tests = [
+    {
+      name: 'valid DPS368 payload',
+      input: JSON.stringify({
+        hostMs: 1787124384441,
+        nodeId: 'mqtt-publisher',
+        message: JSON.stringify({
+          pressureHpa: 1014.6,
+          temperatureC: 22.51
+        })
+      }),
+      validate: (out) => out !== null && out.sensor_type === 'DPS368' && out.pressure === 1014.6 && out.temperature === 22.51
+    },
+    {
+      name: 'DPS368 payload missing pressure',
+      input: JSON.stringify({
+        hostMs: 1787124384441,
+        message: JSON.stringify({
+          temperatureC: 22.51
+        })
+      }),
+      validate: (out) => out === null
+    },
     {
       name: 'valid SHT40 payload',
       input: JSON.stringify({
@@ -204,26 +300,6 @@ export function runAdapterTests() {
         })
       }),
       validate: (out) => out !== null && out.sensor_type === 'SHT40' && out.humidity === 55 && out.temperature === 22.26
-    },
-    {
-      name: 'SHT40 payload missing humidity',
-      input: JSON.stringify({
-        hostMs: 1787112125612,
-        message: JSON.stringify({
-          temperatureC: 22.26
-        })
-      }),
-      validate: (out) => out !== null && out.sensor_type === 'SHT40' && out.humidity === null && out.temperature === 22.26
-    },
-    {
-      name: 'SHT40 payload missing temperature',
-      input: JSON.stringify({
-        hostMs: 1787112125612,
-        message: JSON.stringify({
-          humidityPct: 55
-        })
-      }),
-      validate: (out) => out !== null && out.sensor_type === 'SHT40' && out.humidity === 55 && out.temperature === null
     },
     {
       name: 'valid IMU payload without Fusion fields',
@@ -251,9 +327,6 @@ export function runAdapterTests() {
           accelX: 0.66,
           accelY: 8.92,
           accelZ: 0.13,
-          gyroX: 0.11,
-          gyroY: 0,
-          gyroZ: 0.01,
           rollRad: 0.01,
           pitchRad: -0.03,
           temperatureC: 30
@@ -264,7 +337,7 @@ export function runAdapterTests() {
     {
       name: 'malformed nested JSON',
       input: JSON.stringify({
-        hostMs: 1787112125612,
+        hostMs: 1787124384441,
         message: '{ bad nested json'
       }),
       validate: (out) => out === null

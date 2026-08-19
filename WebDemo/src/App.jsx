@@ -15,17 +15,29 @@ import { normalizeBitstreamPayload } from './adapters/bitstreamSensorAdapter';
 export default function App() {
   const hasLiveBmi270Ref = useRef(false);
   const hasLiveSht40Ref = useRef(false);
+  const hasLiveDps368Ref = useRef(false);
 
-  // Bitstream MQTT Integration (BMI270 & SHT40)
+  // Bitstream MQTT Integration (BMI270, SHT40, DPS368)
   useEffect(() => {
     const bmi270Topic = import.meta.env.VITE_BITSTREAM_MQTT_TOPIC || '';
     const sht40Topic = import.meta.env.VITE_SHT40_MQTT_TOPIC || 'SHT40';
+    const dps368Topic = import.meta.env.VITE_DPS368_MQTT_TOPIC || 'DPS368';
     const url = import.meta.env.VITE_BITSTREAM_MQTT_URL || 'ws://127.0.0.1:8883/mqtt';
 
     bitstreamMqtt.onMessage((topic, rawPayload) => {
       const sensorData = normalizeBitstreamPayload(rawPayload);
       if (sensorData) {
-        if (sensorData.sensor_type === 'SHT40') {
+        if (sensorData.sensor_type === 'DPS368') {
+          console.log('[LabMate DPS368 SensorData]', sensorData);
+          hasLiveDps368Ref.current = true;
+          setState((prev) => ({
+            ...prev,
+            environment: {
+              ...prev.environment,
+              pressure_hpa: sensorData.pressure !== null ? sensorData.pressure : prev.environment.pressure_hpa
+            }
+          }));
+        } else if (sensorData.sensor_type === 'SHT40') {
           console.log('[LabMate SHT40 SensorData]', sensorData);
           hasLiveSht40Ref.current = true;
           setState((prev) => ({
@@ -68,6 +80,9 @@ export default function App() {
     }
     if (sht40Topic) {
       bitstreamMqtt.subscribe(sht40Topic);
+    }
+    if (dps368Topic) {
+      bitstreamMqtt.subscribe(dps368Topic);
     }
 
     return () => {
@@ -357,8 +372,9 @@ export default function App() {
       if (current.state !== 'ALERT') {
         const isBmi270Live = hasLiveBmi270Ref.current;
         const isSht40Live = hasLiveSht40Ref.current;
+        const isDps368Live = hasLiveDps368Ref.current;
 
-        if (isBmi270Live || isSht40Live) {
+        if (isBmi270Live || isSht40Live || isDps368Live) {
           const updatedEnv = { ...current.environment };
 
           // Only generate mock humidity if SHT40 live stream is not active
@@ -368,8 +384,10 @@ export default function App() {
               updatedEnv.temperature_c = +(24.5 + Math.sin(Date.now() / 5000) * 0.5).toFixed(1);
             }
           }
-          // Barometer pressure is not supplied by active sensors; generate mock pressure
-          updatedEnv.pressure_hpa = +(1008.0 + Math.random() * 0.5).toFixed(1);
+          // Only generate mock pressure if DPS368 live stream is not active
+          if (!isDps368Live) {
+            updatedEnv.pressure_hpa = +(1008.0 + Math.random() * 0.5).toFixed(1);
+          }
 
           const updatedTelemetry = {
             ...current,
